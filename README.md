@@ -1,33 +1,33 @@
-# SignMe - Online PDF Signature System
+# SignMe - ระบบลงนามเอกสาร PDF ออนไลน์
 
-SignMe is a web application designed for online PDF document signing. It allows users to upload PDF files, specify signers, and track the signing progress through an intuitive dashboard.
+SignMe เป็นเว็บแอปพลิเคชันที่ออกแบบมาเพื่อการลงนามเอกสาร PDF ออนไลน์ ช่วยให้ผู้ใช้สามารถอัปโหลดไฟล์ PDF ระบุผู้ลงนาม และติดตามสถานะการลงนามได้อย่างง่ายดายผ่าน Dashboard ที่ใช้งานสะดวก
 
-## Features
+## คุณสมบัติหลัก
 
-- **Upload PDF:** Easy PDF upload to start the signing workflow.
-- **Dashboard Overview:** Track all your documents, their statuses, and signing progress.
-- **Multi-Signer Support:** Send documents to multiple people for signing.
-- **Audit Trail:** Detailed history of document actions (created, viewed, signed).
-- **Secure Signing:** Personalized signing links with optional access codes.
-- **Auto-Fill Signatures:** Automatically merge signatures into the PDF upon completion.
+- **อัปโหลด PDF:** อัปโหลดไฟล์ PDF ได้ง่ายเพื่อเริ่มกระบวนการลงนามทันที
+- **ภาพรวม Dashboard:** ติดตามเอกสารทั้งหมด สถานะ และความคืบหน้าการลงนาม
+- **รองรับผู้ลงนามหลายคน:** ส่งเอกสารให้หลายคนลงนามได้พร้อมกัน
+- **Audit Trail:** ประวัติการดำเนินการของเอกสารอย่างละเอียด (สร้าง, เปิดอ่าน, ลงนาม)
+- **การลงนามที่ปลอดภัย:** ลิงก์การลงนามส่วนบุคคล พร้อมรหัสผ่าน (Access Code) เสริมความปลอดภัย
+- **รวมลายเซ็นอัตโนมัติ:** รวมลายเซ็นเข้ากับไฟล์ PDF โดยอัตโนมัติเมื่อลงนามเสร็จสิ้น
 
-## Technology Stack
+## เทคโนโลยีที่ใช้
 
 - **Backend:** PHP
 - **Frontend:** HTML, Vanilla CSS, JavaScript
 - **Database:** MySQL
 - **PDF Processing:** PDF-lib
 
-## Installation
+## การติดตั้ง
 
-1. Clone the repository:
+1. คลอนโปรเจกต์ (Clone):
    ```bash
-   git clone [repository-url]
+   git clone https://github.com/lidezhou2521-blip/signme.git
    ```
-2. Import `db_init.sql` into your MySQL database.
-3. Configure `config.php` with your database credentials and SMTP settings.
-4. Ensure the `uploads/` directory is writable.
+2. นำเข้าไฟล์ `db_init.sql` เข้าสู่ฐานข้อมูล MySQL ของคุณ
+3. ตั้งค่าไฟล์ `config.php` ด้วยข้อมูลฐานข้อมูลและค่า SMTP สำหรับอีเมล
+4. ตรวจสอบให้แน่ใจว่าโฟลเดอร์ `uploads/` สามารถเขียนไฟล์ได้ (Writable)
 
-## License
+## ใบอนุญาต (License)
 
 MIT License
