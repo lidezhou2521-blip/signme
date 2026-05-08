@@ -1,0 +1,17 @@
+# Database configuration
+config.php
+
+# Database dumps
+signme.sql
+
+# Environment files
+.env
+.env.local
+
+# Logs
+*.log
+error_log
+
+# OS generated files
+.DS_Store
+Thumbs.db
