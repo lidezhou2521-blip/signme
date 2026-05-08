@@ -13,5 +13,5 @@ CREATE TABLE IF NOT EXISTS users (
 -- For simplicity in this demo, we can use a direct comparison or hash. 
 -- Let's use password_hash for security.
 INSERT INTO users (username, email, password) 
-VALUES ('admin', 'admin@example.com', '$2y$10$8.09L8.88E.09L8.88E.09L8.88E.09L8.88E.09L8.88E.09L8.88E')
+VALUES ('admin', 'admin@example.com', '$2y$10$IOkxODA1/YjmSrsfzag3GuXJT73/hFDwT7fXuwnpnBd5EjbiMkboe')
 ON DUPLICATE KEY UPDATE username=username;
