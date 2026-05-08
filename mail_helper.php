@@ -1,4 +1,5 @@
 <?php
+
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
 use PHPMailer\PHPMailer\SMTP;
@@ -11,7 +12,8 @@ if (file_exists($phpmailerPath . 'PHPMailer.php')) {
     require $phpmailerPath . 'SMTP.php';
 }
 
-function sendEmail($to, $subject, $body) {
+function sendEmail($to, $subject, $body)
+{
     global $pdo;
 
     // ดึงการตั้งค่าจากฐานข้อมูล
@@ -22,11 +24,12 @@ function sendEmail($to, $subject, $body) {
     }
 
     if (empty($settings['smtp_host']) || !class_exists('PHPMailer\PHPMailer\PHPMailer')) {
-        // หากยังไม่ได้ตั้งค่า SMTP หรือไม่มี Library ให้ใช้ mail() ของ PHP เป็น fallback
-        $headers = "MIME-Version: 1.0" . "\r\n";
-        $headers .= "Content-type:text/html;charset=UTF-8" . "\r\n";
-        $headers .= 'From: SignMe <noreply@' . $_SERVER['HTTP_HOST'] . '>' . "\r\n";
-        return @mail($to, $subject, $body, $headers); // ใช้ @ เพื่อปิด Warning หากส่งไม่ได้
+        // แทนที่จะเงียบ ให้ฟ้องออกมาเลยว่าทำไมถึงตกมาที่นี่
+        $reason = "";
+        if (empty($settings['smtp_host'])) $reason .= " (ตรวจพบ smtp_host เป็นค่าว่างใน DB)";
+        if (!class_exists('PHPMailer\PHPMailer\PHPMailer')) $reason .= " (หา Class PHPMailer ไม่เจอ)";
+        
+        throw new Exception("ระบบพยายามใช้ PHP mail() ดั้งเดิมแทน SMTP เนื่องจาก:" . $reason);
     }
 
     $mail = new PHPMailer(true);
@@ -38,7 +41,7 @@ function sendEmail($to, $subject, $body) {
         $mail->Host       = $settings['smtp_host'];
         $mail->SMTPAuth   = true;
         $mail->Username   = $settings['smtp_user'];
-        $mail->Password   = $settings['smtp_pass'];
+        $mail->Password   = trim(decryptSmtpPass($settings['smtp_pass'])); // ถอดรหัสและตัดช่องว่างที่อาจหลุดมา
         $mail->SMTPSecure = ($settings['smtp_port'] == '465') ? PHPMailer::ENCRYPTION_SMTPS : PHPMailer::ENCRYPTION_STARTTLS;
         $mail->Port       = $settings['smtp_port'];
 
@@ -63,9 +66,7 @@ function sendEmail($to, $subject, $body) {
         $mail->send();
         return true;
     } catch (Exception $e) {
-        // บันทึก Error ไว้ใน error_log ของ PHP
-        error_log("Mail Error: " . $mail->ErrorInfo);
-        return false;
+        // แทนที่จะคืนค่า false ให้โยน Exception พร้อมสาเหตุออกมาเลย
+        throw new Exception("Mail Error: " . $mail->ErrorInfo);
     }
 }
-?>

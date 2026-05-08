@@ -46,6 +46,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profile'])) {
 // อัปเดตการตั้งค่า SMTP (สำหรับ Admin)
 if ($isAdmin && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_smtp'])) {
     foreach ($_POST['smtp'] as $key => $value) {
+        if ($key === 'smtp_pass') {
+            if (empty(trim($value))) {
+                // ปล่อยว่างหมายความว่าไม่ต้องการเปลี่ยนรหัสผ่าน
+                continue;
+            }
+            // เข้ารหัส App Password ก่อนบันทึกลงฐานข้อมูล
+            $value = encryptSmtpPass(trim($value));
+        }
         $stmt = $pdo->prepare("UPDATE settings SET setting_value = ? WHERE setting_key = ?");
         $stmt->execute([$value, $key]);
     }
@@ -122,7 +130,7 @@ if ($isAdmin && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_sm
                     </div>
                     <div class="form-group">
                         <label class="form-label">App Password / Password</label>
-                        <input type="password" name="smtp[smtp_pass]" class="form-control" value="<?php echo htmlspecialchars($smtpSettings['smtp_pass'] ?? ''); ?>" placeholder="••••••••">
+                        <input type="password" name="smtp[smtp_pass]" class="form-control" placeholder="<?php echo !empty($smtpSettings['smtp_pass']) ? 'ตั้งค่าไว้แล้ว (ปล่อยว่างเพื่อไม่เปลี่ยน)' : 'กรอก App Password'; ?>">
                     </div>
                     <div class="form-group">
                         <label class="form-label">ชื่อผู้ส่ง (Display Name)</label>

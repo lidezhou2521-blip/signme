@@ -408,7 +408,14 @@ if (!isset($_SESSION['user_id'])) {
             try {
                 const res = await fetch('api_workflow.php', { method: 'POST', body: formData });
                 const result = await res.json();
-                if (result.success) { alert('ส่งเอกสารเรียบร้อยแล้ว!'); location.href = 'index.php?page=dashboard'; } else throw new Error(result.message);
+                if (result.success) {
+                    if (result.mail_warnings && result.mail_warnings.length > 0) {
+                        alert('สร้างเอกสารเรียบร้อยแล้ว! แต่พบปัญหาการส่งเมล:\n- ' + result.mail_warnings.join('\n- '));
+                    } else {
+                        alert('ส่งเอกสารเรียบร้อยแล้ว!');
+                    }
+                    location.href = 'index.php?page=dashboard';
+                } else throw new Error(result.message);
             } catch (e) { alert('ข้อผิดพลาด: ' + e.message); btn.disabled = false; btn.innerHTML = '<i data-lucide="send"></i> ส่งเพื่อลงนาม'; lucide.createIcons(); }
         };
     </script>

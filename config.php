@@ -1,11 +1,12 @@
 <?php
-$host = 'localhost';
-$db   = 'signme';
-$user = 'root';
-$pass = '';
+$host    = 'localhost'; // Shared Hosting ส่วนใหญ่ใช้ Socket ผ่าน localhost
+$db      = 'signme';   // ← ปรับชื่อ DB ให้ตรงกับที่สร้างใน cPanel
+$user    = 'root';     // ← ปรับเป็น DB User จาก cPanel
+$pass    = '';         // ← ปรับเป็นรหัสผ่าน DB
 $charset = 'utf8mb4';
 
-$dsn = "mysql:host=$host;charset=$charset";
+// รวม dbname ไว้ใน DSN — ใช้ได้ทั้ง XAMPP และ Hosting จริง
+$dsn = "mysql:host=$host;dbname=$db;charset=$charset";
 $options = [
     PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
     PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
@@ -14,7 +15,11 @@ $options = [
 
 try {
     $pdo = new PDO($dsn, $user, $pass, $options);
-    $pdo->exec("CREATE DATABASE IF NOT EXISTS `$db` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+    // พยายามสร้าง DB หากยังไม่มี (ใช้ได้บน XAMPP, บน Hosting จริงมักจะ fail เงียบๆ เพราะไม่มีสิทธิ์)
+    try {
+        $pdo->exec("CREATE DATABASE IF NOT EXISTS `$db` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+    } catch (\PDOException $e) {
+    }
     $pdo->exec("USE `$db`");
 
     // 1. ตาราง users
@@ -112,11 +117,13 @@ try {
         actor_ip VARCHAR(50) NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )");
-
-} catch (\PDOException $e) { die("DB Error: " . $e->getMessage()); }
+} catch (\PDOException $e) {
+    die("DB Error: " . $e->getMessage());
+}
 
 // Helper function สำหรับบันทึกประวัติเอกสาร
-function logDocumentActivity($pdo, $docId, $action, $actorName) {
+function logDocumentActivity($pdo, $docId, $action, $actorName)
+{
     $ip = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
     try {
         $stmt = $pdo->prepare("INSERT INTO document_logs (document_id, action, actor_name, actor_ip) VALUES (?, ?, ?, ?)");
@@ -127,5 +134,36 @@ function logDocumentActivity($pdo, $docId, $action, $actorName) {
 }
 
 
+// ==================== SMTP Encryption Helpers ====================
+// Key นี้ใช้สำหรับเข้ารหัส/ถอดรหัส App Password ก่อนบันทึกลงฐานข้อมูล
+// เก็บไว้ใน config.php ซึ่งถูก .gitignore ไว้แล้ว — ห้ามแชร์ Key นี้
+define('SMTP_ENCRYPT_KEY', 'c2367f39767343846e97cfbb286eb0c90a4ae53dccf876fddf240e0d142d5365');
+
+function encryptSmtpPass(string $plaintext): string
+{
+    if (empty($plaintext)) return '';
+    $key = hex2bin(SMTP_ENCRYPT_KEY); // แปลง hex → 32 bytes (AES-256)
+    $iv  = openssl_random_pseudo_bytes(16); // IV แบบสุ่มใหม่ทุกครั้ง
+    $enc = openssl_encrypt($plaintext, 'AES-256-CBC', $key, OPENSSL_RAW_DATA, $iv);
+    // เก็บ IV ไว้ที่หน้าข้อมูล เพื่อใช้ถอดรหัส (IV ไม่จำเป็นต้องเป็นความลับ)
+    return base64_encode($iv . $enc);
+}
+
+function decryptSmtpPass(string $ciphertext): string
+{
+    if (empty($ciphertext)) return '';
+    $key     = hex2bin(SMTP_ENCRYPT_KEY);
+    $decoded = base64_decode($ciphertext, true);
+    if ($decoded === false || strlen($decoded) < 17) {
+        // ข้อมูลเก่าที่ยังไม่ได้เข้ารหัส — คืนค่าเดิมเพื่อ backward compat.
+        return $ciphertext;
+    }
+    $iv  = substr($decoded, 0, 16);
+    $enc = substr($decoded, 16);
+    $dec = openssl_decrypt($enc, 'AES-256-CBC', $key, OPENSSL_RAW_DATA, $iv);
+    // ถ้า decrypt ล้มเหลว คืน plain-text เดิม (backward compat.)
+    return ($dec === false) ? $ciphertext : $dec;
+}
+// ==================================================================
+
 if (session_status() === PHP_SESSION_NONE) session_start();
-?>

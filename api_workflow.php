@@ -37,8 +37,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $actorName = $_SESSION['username'] ?? 'Unknown User';
         logDocumentActivity($pdo, $docId, 'created', $actorName);
 
-        // 3. Save Signers & Fields
-        $signerIdsByIndex = [];
+        $emailsToSend = [];
+
         foreach ($signersData as $index => $s) {
             $token = bin2hex(random_bytes(16));
             $code = $s['access_code'] ?? null;
@@ -47,27 +47,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $signerId = $pdo->lastInsertId();
             $signerIdsByIndex[$index] = $signerId;
 
-            // --- ส่งอีเมลหาผู้ลงนาม ---
-            $baseUrl = (isset($_SERVER['HTTPS']) ? "https" : "http") . "://$_SERVER[HTTP_HOST]" . dirname($_SERVER['PHP_SELF']);
-            $signLink = "$baseUrl/external_sign.php?token=$token";
-            
-            $codeMsg = $code ? "<p style='color: #dc2626; font-weight: bold;'>* เอกสารนี้มีการตั้งรหัสผ่านในการเข้าถึง: $code</p>" : "";
-
-            $subject = "เชิญลงนามเอกสาร: $file_name";
-            $body = "
-                <div style='font-family: sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;'>
-                    <h2 style='color: #2563eb;'>สวัสดีคุณ {$s['name']}</h2>
-                    <p>คุณได้รับคำเชิญให้ลงนามในเอกสาร: <strong>$file_name</strong></p>
-                    $codeMsg
-                    <p style='margin-top: 30px; text-align: center;'>
-                        <a href='$signLink' style='background: #2563eb; color: white; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;'>คลิกที่นี่เพื่อเริ่มลงนาม</a>
-                    </p>
-                    <p style='margin-top: 30px; font-size: 0.85rem; color: #666; border-top: 1px solid #eee; padding-top: 15px;'>หากปุ่มใช้งานไม่ได้ คุณสามารถคัดลอกลิงก์นี้ไปวางในเบราว์เซอร์ได้:<br><span style='color: #2563eb;'>$signLink</span></p>
-                </div>
-            ";
-            @sendEmail($s['email'], $subject, $body); // ส่งเมลแบบไม่ให้ Error มาขัดจังหวะ
-            // ------------------------
-            logDocumentActivity($pdo, $docId, 'sent', "Sent to " . $s['name']);
+            // เก็บข้อมูลไว้ส่งเมลหลัง Commit
+            $emailsToSend[] = [
+                'email' => $s['email'],
+                'name' => $s['name'],
+                'token' => $token,
+                'code' => $code
+            ];
         }
 
         foreach ($fieldsData as $f) {
@@ -80,7 +66,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         $pdo->commit();
-        echo json_encode(['success' => true]);
+
+        // --- ส่งอีเมลหาผู้ลงนาม (ทำหลังจาก Commit เพื่อไม่ให้ Transaction ค้าง) ---
+        $mailErrors = [];
+        $baseUrl = (isset($_SERVER['HTTPS']) ? "https" : "http") . "://$_SERVER[HTTP_HOST]" . dirname($_SERVER['PHP_SELF']);
+        
+        foreach ($emailsToSend as $m) {
+            $signLink = "$baseUrl/external_sign.php?token={$m['token']}";
+            $codeMsg = $m['code'] ? "<p style='color: #dc2626; font-weight: bold;'>* เอกสารนี้มีการตั้งรหัสผ่านในการเข้าถึง: {$m['code']}</p>" : "";
+
+            $subject = "เชิญลงนามเอกสาร: $file_name";
+            $body = "
+                <div style='font-family: sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;'>
+                    <h2 style='color: #2563eb;'>สวัสดีคุณ {$m['name']}</h2>
+                    <p>คุณได้รับคำเชิญให้ลงนามในเอกสาร: <strong>$file_name</strong></p>
+                    $codeMsg
+                    <p style='margin-top: 30px; text-align: center;'>
+                        <a href='$signLink' style='background: #2563eb; color: white; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;'>คลิกที่นี่เพื่อเริ่มลงนาม</a>
+                    </p>
+                    <p style='margin-top: 30px; font-size: 0.85rem; color: #666; border-top: 1px solid #eee; padding-top: 15px;'>หากปุ่มใช้งานไม่ได้ คุณสามารถคัดลอกลิงก์นี้ไปวางในเบราว์เซอร์ได้:<br><span style='color: #2563eb;'>$signLink</span></p>
+                </div>
+            ";
+
+            try {
+                sendEmail($m['email'], $subject, $body);
+            } catch (Exception $e) {
+                // ถ้ามี Error เกิดขึ้นในฟังก์ชันส่งเมล ให้เก็บข้อความไว้
+                $mailErrors[] = "ส่งเมลหา " . $m['email'] . " ล้มเหลว: " . $e->getMessage();
+            }
+            
+            logDocumentActivity($pdo, $docId, 'sent', "Sent to " . $m['name']);
+        }
+
+        $response = ['success' => true];
+        if (!empty($mailErrors)) {
+            $response['mail_warnings'] = $mailErrors;
+        }
+        echo json_encode($response);
 
     } catch (Exception $e) {
         if ($pdo->inTransaction()) $pdo->rollBack();
