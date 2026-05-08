@@ -32,8 +32,26 @@ if (isset($_GET['delete_id'])) {
         $doc = $stmt->fetch();
         if ($doc) {
             // ลบไฟล์ PDF บนเซิร์ฟเวอร์
-            if (!empty($doc['file_path']) && file_exists($doc['file_path'])) {
-                unlink($doc['file_path']);
+            if (!empty($doc['file_path'])) {
+                // ลบไฟล์ปัจจุบันที่อ้างอิงใน DB
+                if (file_exists($doc['file_path'])) {
+                    unlink($doc['file_path']);
+                }
+                
+                // ตรวจสอบและลบไฟล์คู่กัน (ต้นฉบับ <-> Completed)
+                if (strpos($doc['file_path'], '_completed.pdf') !== false) {
+                    // ถ้าไฟล์ใน DB เป็นแบบ completed ให้หาทางลบไฟล์ต้นฉบับด้วย
+                    $originalPath = str_replace('_completed.pdf', '.pdf', $doc['file_path']);
+                    if (file_exists($originalPath)) {
+                        unlink($originalPath);
+                    }
+                } else {
+                    // ถ้าไฟล์ใน DB เป็นแบบต้นฉบับ ให้หาทางลบไฟล์ completed ด้วย
+                    $completedPath = str_replace('.pdf', '_completed.pdf', $doc['file_path']);
+                    if (file_exists($completedPath)) {
+                        unlink($completedPath);
+                    }
+                }
             }
             
             // ลบข้อมูลที่เกี่ยวข้องตามลำดับ (ป้องกัน Foreign Key Error)
@@ -323,6 +341,18 @@ if (isset($_GET['delete_id'])) {
             try {
                 const btn = event.currentTarget; const originalHtml = btn.innerHTML;
                 btn.innerHTML = '<i data-lucide="loader-2" class="animate-spin" style="width:16px;"></i>'; btn.disabled = true; lucide.createIcons();
+
+                // ถ้า filePath เป็น _completed.pdf แสดงว่ามีลายเซ็น bake ไว้แล้ว — เปิดตรงๆ ได้เลย
+                if (filePath.includes('_completed.pdf')) {
+                    const url = filePath;
+                    if (isPreview) { window.open(url, '_blank'); } else {
+                        const link = document.createElement('a'); link.href = url; link.download = 'COMPLETED_' + fileName; link.click();
+                    }
+                    btn.innerHTML = originalHtml; btn.disabled = false; lucide.createIcons();
+                    return;
+                }
+
+                // กรณีไฟล์ต้นฉบับ (ยังไม่มีลายเซ็น bake) — ดึงลายเซ็นจาก DB มาวาดก่อน
                 const response = await fetch(`api_get_signatures.php?id=${docId}`);
                 const fields = await response.json();
                 const pdfBytes = await fetch(filePath).then(res => res.arrayBuffer());
@@ -331,13 +361,20 @@ if (isset($_GET['delete_id'])) {
                     if (!field.signature_data) continue;
                     const page = pdfDoc.getPage(field.page_number - 1);
                     const { width, height } = page.getSize();
-                    const sigDataUrl = field.signature_data;
-                    const base64Data = sigDataUrl.split(',')[1];
+                    const base64Data = field.signature_data.split(',')[1];
                     const binaryStr = atob(base64Data);
                     const bytes = new Uint8Array(binaryStr.length);
                     for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
                     const sigImage = await pdfDoc.embedPng(bytes);
-                    page.drawImage(sigImage, { x: field.x * width, y: height - (field.y * height) - (field.height * height), width: field.width * width, height: field.height * height });
+                    const imgDims = sigImage.scale(1);
+                    const fieldW = field.width * width, fieldH = field.height * height;
+                    const fieldX = field.x * width, fieldY = height - (field.y * height) - fieldH;
+                    const fitScale = Math.min(fieldW / imgDims.width, fieldH / imgDims.height);
+                    page.drawImage(sigImage, {
+                        x: fieldX + (fieldW - imgDims.width * fitScale) / 2,
+                        y: fieldY + (fieldH - imgDims.height * fitScale) / 2,
+                        width: imgDims.width * fitScale, height: imgDims.height * fitScale
+                    });
                 }
                 const mergedPdfBytes = await pdfDoc.save();
                 const blob = new Blob([mergedPdfBytes], { type: 'application/pdf' });

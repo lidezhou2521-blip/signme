@@ -194,8 +194,8 @@ $fields = $stmt->fetchAll();
                     <canvas id="signature-canvas"></canvas>
                     <div class="flex gap-3 items-center justify-center" style="margin-top: 1rem;">
                         <span style="font-size: 0.85rem; color: var(--text-muted);">สีปากกา:</span>
-                        <button type="button" class="pen-color-btn active" data-color="#000000" style="width: 24px; height: 24px; border-radius: 50%; background: #000000; border: 2px solid white; outline: 1px solid #cbd5e1; cursor: pointer;"></button>
-                        <button type="button" class="pen-color-btn" data-color="#0000bb" style="width: 24px; height: 24px; border-radius: 50%; background: #0000bb; border: 2px solid white; outline: 1px solid #cbd5e1; cursor: pointer;"></button>
+                        <button type="button" class="pen-color-btn" data-color="#000000" style="width: 24px; height: 24px; border-radius: 50%; background: #000000; border: 2px solid white; outline: 1px solid #cbd5e1; cursor: pointer;"></button>
+                        <button type="button" class="pen-color-btn active" data-color="#0000bb" style="width: 24px; height: 24px; border-radius: 50%; background: #0000bb; border: 2px solid white; outline: 1px solid var(--primary); cursor: pointer;"></button>
                         <button type="button" class="pen-color-btn" data-color="#cc0000" style="width: 24px; height: 24px; border-radius: 50%; background: #cc0000; border: 2px solid white; outline: 1px solid #cbd5e1; cursor: pointer;"></button>
                     </div>
                 </div>
@@ -395,7 +395,7 @@ $fields = $stmt->fetchAll();
                 if (!canvas) return;
                 signaturePad = new SignaturePad(canvas, { 
                     backgroundColor: 'rgba(255, 255, 255, 0)',
-                    penColor: '#000000'
+                    penColor: '#0000bb'
                 });
 
                 // จัดการเรื่องการเปลี่ยนสีปากกา
@@ -483,59 +483,85 @@ $fields = $stmt->fetchAll();
 
                 if (field.field_type === 'signature' || !field.field_type) {
                     if (signaturePad.isEmpty()) return alert('กรุณาลงลายมือชื่อ');
-                    dataUrl = signaturePad.toDataURL('image/png');
+                    // --- วิธีมืออาชีพ: Crop เฉพาะส่วนที่มีลายเซ็น (Bounding Box) ---
+                    // ได้ภาพที่รัดรูป ไม่มีพื้นที่ว่างเกินรอบลายเซ็น
+                    const rawData = signaturePad.toData();
+                    if (!rawData || rawData.length === 0) return alert('กรุณาลงลายมือชื่อ');
+                    
+                    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+                    rawData.forEach(stroke => {
+                        stroke.points.forEach(pt => {
+                            minX = Math.min(minX, pt.x); minY = Math.min(minY, pt.y);
+                            maxX = Math.max(maxX, pt.x); maxY = Math.max(maxY, pt.y);
+                        });
+                    });
+                    const pad = 12; // padding รอบลายเซ็น
+                    minX = Math.max(0, minX - pad); minY = Math.max(0, minY - pad);
+                    
+                    const sigCanvas = document.getElementById('signature-canvas');
+                    const ratio = Math.max(window.devicePixelRatio || 1, 1);
+                    const cropW = Math.min((maxX - minX + pad * 2) * ratio, sigCanvas.width);
+                    const cropH = Math.min((maxY - minY + pad * 2) * ratio, sigCanvas.height);
+                    
+                    const cropCanvas = document.createElement('canvas');
+                    cropCanvas.width = Math.max(cropW, 10);
+                    cropCanvas.height = Math.max(cropH, 10);
+                    const cropCtx = cropCanvas.getContext('2d');
+                    cropCtx.drawImage(sigCanvas,
+                        minX * ratio, minY * ratio, cropW, cropH,
+                        0, 0, cropCanvas.width, cropCanvas.height
+                    );
+                    dataUrl = cropCanvas.toDataURL('image/png');
+
                 } else {
                     let val = document.getElementById('field-text-input').value;
                     if (!val) return alert('กรุณากรอกข้อมูล');
                     
-                    // หากเป็นฟิลด์วันที่ ให้แปลงรูปแบบเป็นภาษาไทยและเลขไทย
                     if (field.field_type === 'date') {
                         val = formatThaiDate(val);
                     }
                     
                     const fontFamily = document.getElementById('font-family').value;
-                    const fontSize = document.getElementById('font-size').value;
+                    const fontSize  = parseInt(document.getElementById('font-size').value) || 18;
                     const fontColor = document.getElementById('font-color').value;
-
-                    // ดึงขนาดของกล่องจริงบนหน้าจอ เพื่อสร้าง Canvas ที่มีสัดส่วน (Aspect Ratio) ตรงกัน
-                    // ป้องกันปัญหาฟอนต์บิดเบี้ยว (ยืด/หด) เมื่อนำไปฝังใน PDF
-                    const fd = document.getElementById(`field-${activeFieldId}`);
-                    const rect = fd.getBoundingClientRect();
-                    
-                    const canvas = document.createElement('canvas');
-                    const ctx = canvas.getContext('2d');
-                    
-                    // ใช้ความละเอียด 4 เท่าของหน้าจอเพื่อให้ภาพคมชัดเวลาพิมพ์
-                    const scale = 4;
-                    canvas.width = rect.width * scale;
-                    canvas.height = rect.height * scale;
-                    
-                    // ปรับขนาดฟอนต์ให้สัมพันธ์กับสเกลของ Canvas
-                    const scaledFontSize = parseInt(fontSize) * (canvas.height / 100); // เทียบสัดส่วนความสูง
-                    
                     const fontWeight = isBold ? '900' : document.getElementById('font-weight').value;
-                    const fontStyle = isItalic ? 'italic' : '';
+                    const fontStyle  = isItalic ? 'italic' : 'normal';
+
+                    // --- วิธีมืออาชีพ: render ที่ขนาดคงที่ ไม่ผูกกับขนาดช่อง ---
+                    // ใช้ Canvas ความละเอียดสูงขนาดคงที่ แล้วปรับแต่ font ตามที่ผู้ใช้ตั้งไว้
+                    const DPI_SCALE = 4; // ความละเอียด 4x เพื่อความคมชัดในการพิมพ์
+                    const BASE_FONT_PX = fontSize * DPI_SCALE;
                     
-                    ctx.font = `${fontStyle} ${fontWeight} ${scaledFontSize}px ${fontFamily}`;
+                    // สร้าง canvas ชั่วคราวเพื่อวัดขนาดข้อความจริง
+                    const measureCanvas = document.createElement('canvas');
+                    const measureCtx   = measureCanvas.getContext('2d');
+                    measureCtx.font = `${fontStyle} ${fontWeight} ${BASE_FONT_PX}px ${fontFamily}`;
+                    const metrics = measureCtx.measureText(val);
+                    const textW   = metrics.width;
+                    const textH   = BASE_FONT_PX * 1.4; // line height ประมาณ 1.4x
+                    
+                    const HPAD = BASE_FONT_PX * 0.6;
+                    const VPAD = BASE_FONT_PX * 0.4;
+                    const canvas  = document.createElement('canvas');
+                    canvas.width  = textW + HPAD * 2;
+                    canvas.height = textH + VPAD * 2;
+                    const ctx     = canvas.getContext('2d');
+                    ctx.font      = `${fontStyle} ${fontWeight} ${BASE_FONT_PX}px ${fontFamily}`;
                     ctx.fillStyle = fontColor;
-                    
-                    // จัดตำแหน่งข้อความให้อยู่ตรงกลางกล่องพอดี
-                    ctx.textAlign = 'center';
+                    ctx.textAlign    = 'center';
                     ctx.textBaseline = 'middle';
                     ctx.fillText(val, canvas.width / 2, canvas.height / 2);
-                    
                     dataUrl = canvas.toDataURL('image/png');
                 }
 
                 signaturesMap.set(activeFieldId, dataUrl);
                 const fd = document.getElementById(`field-${activeFieldId}`);
-                fd.innerHTML = `<img src="${dataUrl}">`;
+                // แสดงผลด้วย object-fit: contain เพื่อให้ preview สวยงาม
+                fd.innerHTML = `<img src="${dataUrl}" style="width:100%;height:100%;object-fit:contain;object-position:center;">`;
                 fd.classList.add('filled');
                 filledFields.add(activeFieldId.toString());
                 updateProgress();
                 closeModal();
-                
-                // หลังจากปิด Modal ให้สแกนหาจุดถัดไปแล้วพาไปหาแบบเท่ๆ
                 setTimeout(goToNextField, 400);
             };
 
@@ -547,21 +573,17 @@ $fields = $stmt->fetchAll();
                 const signatures = [];
                 signaturesMap.forEach((data, id) => signatures.push({ id, data }));
                 try {
-                    const allSigsRes = await fetch(`api_get_signatures.php?id=<?php echo $signer['document_id']; ?>`);
-                    const previousFields = await allSigsRes.json();
-                    
-                    const allFieldsToFlatten = [...previousFields];
-                    signatures.forEach(sig => {
+                    // pdfUrl คือไฟล์ล่าสุด (อาจเป็น _completed.pdf ที่มีลายเซ็นก่อนหน้าอยู่แล้ว)
+                    // ดังนั้นเราวาดเฉพาะลายเซ็นใหม่ของผู้เซ็นคนนี้ลงไป ไม่ต้องดึงของเก่ามาวาดซ้ำ
+                    const onlyCurrentSignatures = signatures.map(sig => {
                         const fieldDef = fields.find(f => f.id == sig.id);
-                        if (fieldDef) {
-                            allFieldsToFlatten.push({ ...fieldDef, signature_data: sig.data });
-                        }
-                    });
+                        return fieldDef ? { ...fieldDef, signature_data: sig.data } : null;
+                    }).filter(Boolean);
 
                     const pdfBytes = await fetch(pdfUrl).then(res => res.arrayBuffer());
                     const pdfDocLib = await PDFLib.PDFDocument.load(pdfBytes);
                     
-                    for (const field of allFieldsToFlatten) {
+                    for (const field of onlyCurrentSignatures) {
                         if (!field.signature_data) continue;
                         const page = pdfDocLib.getPage(field.page_number - 1);
                         const { width, height } = page.getSize();
@@ -572,11 +594,30 @@ $fields = $stmt->fetchAll();
                         for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
                         
                         const sigImage = await pdfDocLib.embedPng(bytes);
-                        page.drawImage(sigImage, { 
-                            x: field.x * width, 
-                            y: height - (field.y * height) - (field.height * height), 
-                            width: field.width * width, 
-                            height: field.height * height 
+                        const imgDims  = sigImage.scale(1); // ขนาดจริงของภาพ (pixels)
+
+                        // พื้นที่ใน PDF ที่ผู้ใช้กำหนดไว้ (หน่วย pt)
+                        const fieldW = field.width  * width;
+                        const fieldH = field.height * height;
+                        const fieldX = field.x * width;
+                        const fieldY = height - (field.y * height) - fieldH;
+
+                        // --- Professional "object-fit: contain" ---
+                        // คำนวณสัดส่วนภาพเทียบกับพื้นที่ เพื่อ fit ภายในโดยไม่ยืด/หด
+                        const scaleW = fieldW / imgDims.width;
+                        const scaleH = fieldH / imgDims.height;
+                        const fitScale = Math.min(scaleW, scaleH);
+
+                        const drawW = imgDims.width  * fitScale;
+                        const drawH = imgDims.height * fitScale;
+
+                        // จัดตำแหน่งให้อยู่กึ่งกลางของช่อง
+                        const drawX = fieldX + (fieldW - drawW) / 2;
+                        const drawY = fieldY + (fieldH - drawH) / 2;
+
+                        page.drawImage(sigImage, {
+                            x: drawX, y: drawY,
+                            width: drawW, height: drawH
                         });
                     }
                     
